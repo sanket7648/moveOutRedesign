@@ -1,79 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Building2,
-  BedDouble,
-  Store,
+  ArrowLeft,
   Calendar,
   CheckCircle2,
   Zap,
   Plus,
   Minus,
   X,
-  Share2,
-  RotateCcw,
   Edit3,
-  Copy,
-  Check,
   Wrench,
   Home,
   Receipt,
-  Info
+  Info,
+  Check
 } from 'lucide-react';
 
-// --- SCENARIO PRESETS FOR TESTING DIFFERENT PROPERTY TYPES ---
-const PRESETS = {
-  pg: {
-    id: 'pg',
-    pillLabel: 'PG / Co-Living',
-    tenantName: 'Peter',
-    unitName: 'Sai PG · Single Bed 2',
-    monthlyRent: 9000,
-    depositHeld: 10000,
-    priorDues: 0,
-    defaultMoveOutDate: '2026-11-25', // Mid-month -> Card 2 shows "25 Days · ₹7,500"
-    prevMeter: 1420,
-    currMeter: 1465,
-    meterRate: 10,
-    receiptId: 'STL-102'
-  },
-  flat: {
-    id: 'flat',
-    pillLabel: '2BHK Apartment',
-    tenantName: 'Rahul Sharma',
-    unitName: 'Flat 402',
-    monthlyRent: 22000,
-    depositHeld: 50000,
-    priorDues: 0,
-    defaultMoveOutDate: '2026-11-30', // Last day of month -> Card 2 shows "Full Month · ₹22,000"
-    prevMeter: 4120,
-    currMeter: 4270,
-    meterRate: 8,
-    receiptId: 'STL-402'
-  },
-  shop: {
-    id: 'shop',
-    pillLabel: 'Commercial Shop',
-    tenantName: 'Apex Studio',
-    unitName: 'Shop G-04',
-    monthlyRent: 45000,
-    depositHeld: 150000,
-    priorDues: 5000,
-    defaultMoveOutDate: '2026-11-20', // Mid-month -> Card 2 shows "20 Days · ₹30,000"
-    prevMeter: 8500,
-    currMeter: 8850,
-    meterRate: 12,
-    receiptId: 'STL-G04'
-  }
+// --- TYPES FOR CLEAN .TSX & .JSX COMPATIBILITY ---
+interface ExtraCharge {
+  id: string;
+  label: string;
+  amount: number;
+}
+
+interface DateDetails {
+  day: number;
+  daysInMonth: number;
+  isLastDayOfMonth: boolean;
+  shortMonth: string;
+  fullMonth: string;
+  year: number;
+}
+
+type ModeTab = 'now' | 'future';
+type RentCardOption = 'paid' | 'stay';
+type SettlementTiming = 'now' | 'later';
+type PaymentMode = 'UPI' | 'Cash' | 'Bank';
+type UnitPostStatus = 'available' | 'repair';
+
+// --- DEFAULT TENANT & PROPERTY RECORD ---
+const TENANT_RECORD = {
+  tenantName: 'Peter',
+  propertyUnit: 'Sai PG · Single Bed 2',
+  monthlyRent: 9000,
+  defaultDeposit: 10000,
+  defaultMoveOutDate: '2026-11-25',
+  defaultNoticeDate: '2026-11-30',
+  defaultPrevMeter: 1420,
+  defaultCurrMeter: 1465,
+  defaultMeterRate: 10,
+  receiptId: 'STL-2026-102'
 };
 
-// Format INR cleanly (e.g., ₹1,50,000)
-const formatINR = (val) => {
+// Format currency in Indian Rupees (e.g., ₹10,000)
+const formatINR = (val: number): string => {
   const num = Math.round(Number(val) || 0);
   return `₹${num.toLocaleString('en-IN')}`;
 };
 
 // Parse YYYY-MM-DD safely and compute exact calendar days in that month
-const parseDateDetails = (dateStr) => {
+const parseDateDetails = (dateStr: string): DateDetails => {
   if (!dateStr || !dateStr.includes('-')) {
     return {
       day: 25,
@@ -84,6 +69,7 @@ const parseDateDetails = (dateStr) => {
       year: 2026
     };
   }
+
   const [y, m, d] = dateStr.split('-').map(Number);
   const year = y || 2026;
   const month = m || 11;
@@ -101,123 +87,69 @@ const parseDateDetails = (dateStr) => {
   };
 };
 
-const formatShortDate = (dateStr) => {
+const formatShortDate = (dateStr: string): string => {
   const { day, shortMonth } = parseDateDetails(dateStr);
   return `${day} ${shortMonth}`;
 };
 
-const formatFullDate = (dateStr) => {
+const formatFullDate = (dateStr: string): string => {
   const { day, shortMonth, year } = parseDateDetails(dateStr);
   return `${day} ${shortMonth} ${year}`;
 };
 
 export default function App() {
-  // --- ACTIVE TEST PRESET ---
-  const [activePresetId, setActivePresetId] = useState('pg');
-  const preset = PRESETS[activePresetId];
-
   // --- TOP MODE TABS: 'now' | 'future' ---
-  const [activeTab, setActiveTab] = useState('now');
+  const [activeTab, setActiveTab] = useState<ModeTab>('now');
 
-  // --- COMPLETION SCREEN STATE ---
-  const [isCompleted, setIsCompleted] = useState(false);
+  // --- POST-COMPLETION & FEEDBACK STATES ---
+  const [isCompleted, setIsCompleted] = useState<boolean>(false);
+  const [isDoneConfirmed, setIsDoneConfirmed] = useState<boolean>(false);
+  const [headerBannerMsg, setHeaderBannerMsg] = useState<string>('');
 
   // --- NOTICE GIVEN (FUTURE EXIT) STATE ---
-  const [futureExitDate, setFutureExitDate] = useState('2026-12-05');
-  const [isNoticeSaved, setIsNoticeSaved] = useState(false);
+  const [futureExitDate, setFutureExitDate] = useState<string>(TENANT_RECORD.defaultNoticeDate);
+  const [noticeNote, setNoticeNote] = useState<string>('');
+  const [isNoticeSaved, setIsNoticeSaved] = useState<boolean>(false);
 
   // --- MOVE OUT NOW: DATE & CURRENT MONTH RENT (2-CARD STATE) ---
-  const [moveOutDate, setMoveOutDate] = useState(PRESETS.pg.defaultMoveOutDate);
-  const [rentCard, setRentCard] = useState('stay'); // 'paid' (Card 1) | 'stay' (Card 2)
-  const [isRentOverridden, setIsRentOverridden] = useState(false);
-  const [customRentAmount, setCustomRentAmount] = useState(7500);
+  const [moveOutDate, setMoveOutDate] = useState<string>(TENANT_RECORD.defaultMoveOutDate);
+  const [rentCard, setRentCard] = useState<RentCardOption>('stay'); // 'paid' (Card 1) | 'stay' (Card 2)
+  const [isRentOverridden, setIsRentOverridden] = useState<boolean>(false);
+  const [customRentAmount, setCustomRentAmount] = useState<number>(7500);
 
-  // --- PRIOR DUES & EDITABLE DEPOSIT ---
-  const [priorDues, setPriorDues] = useState(0);
-  const [showPriorDuesInput, setShowPriorDuesInput] = useState(false);
-  const [depositHeld, setDepositHeld] = useState(PRESETS.pg.depositHeld);
+  // --- PRIOR DUES & EDITABLE SECURITY DEPOSIT ---
+  const [priorDues, setPriorDues] = useState<number>(0);
+  const [showPriorDuesInput, setShowPriorDuesInput] = useState<boolean>(false);
+  const [depositHeld, setDepositHeld] = useState<number>(TENANT_RECORD.defaultDeposit);
 
   // --- ELECTRICITY / UTILITIES ---
-  const [electricityAmount, setElectricityAmount] = useState(450);
-  const [showMeterCalc, setShowMeterCalc] = useState(false);
-  const [prevMeter, setPrevMeter] = useState(1420);
-  const [currMeter, setCurrMeter] = useState(1465);
-  const [meterRate, setMeterRate] = useState(10);
+  const [electricityAmount, setElectricityAmount] = useState<number>(450);
+  const [showMeterCalc, setShowMeterCalc] = useState<boolean>(false);
+  const [prevMeter, setPrevMeter] = useState<number>(TENANT_RECORD.defaultPrevMeter);
+  const [currMeter, setCurrMeter] = useState<number>(TENANT_RECORD.defaultCurrMeter);
+  const [meterRate, setMeterRate] = useState<number>(TENANT_RECORD.defaultMeterRate);
 
-  // --- OPTIONAL CHARGES & DISCOUNTS (COLLAPSED BY DEFAULT) ---
-  const [showChargeDrawer, setShowChargeDrawer] = useState(false);
-  const [showDiscountDrawer, setShowDiscountDrawer] = useState(false);
-  const [extraCharges, setExtraCharges] = useState([]); // { id, label, amount }
-  const [discountAmount, setDiscountAmount] = useState(0);
-  const [discountNote, setDiscountNote] = useState('');
+  // --- COLLAPSIBLE CHARGES & DISCOUNTS ---
+  const [showChargeDrawer, setShowChargeDrawer] = useState<boolean>(false);
+  const [showDiscountDrawer, setShowDiscountDrawer] = useState<boolean>(false);
+  const [extraCharges, setExtraCharges] = useState<ExtraCharge[]>([]);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [discountNote, setDiscountNote] = useState<string>('');
 
   // Draft inputs for custom charge / discount
-  const [customChargeName, setCustomChargeName] = useState('');
-  const [customChargeVal, setCustomChargeVal] = useState('');
-  const [draftDiscountVal, setDraftDiscountVal] = useState('');
-  const [draftDiscountNote, setDraftDiscountNote] = useState('');
+  const [customChargeName, setCustomChargeName] = useState<string>('');
+  const [customChargeVal, setCustomChargeVal] = useState<string>('');
+  const [draftDiscountVal, setDraftDiscountVal] = useState<string>('');
+  const [draftDiscountNote, setDraftDiscountNote] = useState<string>('');
 
   // --- SETTLEMENT STATUS STATE ---
-  const [settlementTiming, setSettlementTiming] = useState('now'); // 'now' | 'later'
-  const [settledAmountInput, setSettledAmountInput] = useState(0);
-  const [paymentMode, setPaymentMode] = useState('UPI'); // 'UPI' | 'Cash' | 'Bank'
-  const [paymentNote, setPaymentNote] = useState('');
+  const [settlementTiming, setSettlementTiming] = useState<SettlementTiming>('now');
+  const [settledAmountInput, setSettledAmountInput] = useState<number>(0);
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('UPI');
+  const [paymentNote, setPaymentNote] = useState<string>('');
 
   // --- POST-SETTLEMENT UNIT STATUS ---
-  const [unitStatus, setUnitStatus] = useState('available'); // 'available' | 'repair'
-
-  // Load a property preset cleanly
-  const loadPreset = (key) => {
-    const p = PRESETS[key];
-    setActivePresetId(key);
-    setActiveTab('now');
-    setIsCompleted(false);
-
-    // Future notice reset
-    setFutureExitDate('2026-12-05');
-    setIsNoticeSaved(false);
-
-    // Move out now reset
-    setMoveOutDate(p.defaultMoveOutDate);
-    setRentCard('stay');
-    setIsRentOverridden(false);
-
-    const details = parseDateDetails(p.defaultMoveOutDate);
-    const initialStayRent = details.isLastDayOfMonth
-      ? p.monthlyRent
-      : Math.round((p.monthlyRent / details.daysInMonth) * details.day);
-    setCustomRentAmount(initialStayRent);
-
-    setPriorDues(p.priorDues);
-    setShowPriorDuesInput(p.priorDues > 0);
-    setDepositHeld(p.depositHeld);
-
-    setPrevMeter(p.prevMeter);
-    setCurrMeter(p.currMeter);
-    setMeterRate(p.meterRate);
-    const units = Math.max(0, p.currMeter - p.prevMeter);
-    setElectricityAmount(units * p.meterRate);
-    setShowMeterCalc(false);
-
-    setExtraCharges([]);
-    setDiscountAmount(0);
-    setDiscountNote('');
-    setShowChargeDrawer(false);
-    setShowDiscountDrawer(false);
-    setCustomChargeName('');
-    setCustomChargeVal('');
-    setDraftDiscountVal('');
-    setDraftDiscountNote('');
-
-    setSettlementTiming('now');
-    setPaymentMode('UPI');
-    setPaymentNote('');
-    setUnitStatus('available');
-  };
-
-  useEffect(() => {
-    loadPreset('pg');
-  }, []);
+  const [unitStatus, setUnitStatus] = useState<UnitPostStatus>('available');
 
   // --- LIVE RENT & DATE CALCULATIONS ---
   const dateInfo = parseDateDetails(moveOutDate);
@@ -225,9 +157,9 @@ export default function App() {
   const daysInMonth = dateInfo.daysInMonth;
   const isLastDayOfMonth = dateInfo.isLastDayOfMonth;
 
-  const dailyRate = preset.monthlyRent / daysInMonth;
+  const dailyRate = TENANT_RECORD.monthlyRent / daysInMonth;
   const autoStayRent = isLastDayOfMonth
-    ? preset.monthlyRent
+    ? TENANT_RECORD.monthlyRent
     : Math.round(dailyRate * stayDays);
 
   const activeCard2Rent = isRentOverridden
@@ -236,23 +168,22 @@ export default function App() {
 
   const selectedRent = rentCard === 'paid' ? 0 : activeCard2Rent;
 
-  // --- LIVE LEDGER TOTALS ---
+  // --- LIVE BILL & DEPOSIT TOTALS ---
   const safePriorDues = Math.max(0, Number(priorDues) || 0);
   const safeElectricity = Math.max(0, Number(electricityAmount) || 0);
   const extraChargesSum = extraCharges.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const safeDiscount = Math.max(0, Number(discountAmount) || 0);
   const safeDeposit = Math.max(0, Number(depositHeld) || 0);
 
-  const rawCharges = selectedRent + safePriorDues + safeElectricity + extraChargesSum;
-  const totalCharges = Math.max(0, rawCharges - safeDiscount);
+  const rawBill = selectedRent + safePriorDues + safeElectricity + extraChargesSum;
+  const totalBill = Math.max(0, rawBill - safeDiscount);
 
-  const netBalance = safeDeposit - totalCharges;
+  const netBalance = safeDeposit - totalBill;
   const isRefund = netBalance > 0;
-  const isPayable = netBalance < 0;
   const isZero = netBalance === 0;
   const netAbs = Math.abs(netBalance);
 
-  // Sync settled input when net amount updates
+  // Keep settled amount input synced to full net amount whenever calculations change
   useEffect(() => {
     setSettledAmountInput(netAbs);
   }, [netAbs]);
@@ -260,12 +191,13 @@ export default function App() {
   const safeSettledInput = Math.max(0, Number(settledAmountInput) || 0);
   const remainingPending =
     settlementTiming === 'later' ? netAbs : Math.max(0, netAbs - safeSettledInput);
-  const isPartial = settlementTiming === 'now' && netAbs > 0 && safeSettledInput < netAbs;
+  const isPartial =
+    settlementTiming === 'now' && netAbs > 0 && safeSettledInput > 0 && safeSettledInput < netAbs;
 
   // --- METER CALCULATOR HANDLERS ---
   const unitsConsumed = Math.max(0, (Number(currMeter) || 0) - (Number(prevMeter) || 0));
 
-  const handleMeterChange = (field, rawVal) => {
+  const handleMeterChange = (field: 'prev' | 'curr' | 'rate', rawVal: string) => {
     const val = Math.max(0, Number(rawVal) || 0);
     const nextPrev = field === 'prev' ? val : Number(prevMeter) || 0;
     const nextCurr = field === 'curr' ? val : Number(currMeter) || 0;
@@ -279,32 +211,32 @@ export default function App() {
     setElectricityAmount(Math.round(units * nextRate));
   };
 
-  // --- EXTRA CHARGES & DISCOUNTS ---
-  const addQuickCharge = (label, amount) => {
+  // --- EXTRA CHARGES & DISCOUNTS HANDLERS ---
+  const addQuickCharge = (label: string, amount: number) => {
     setExtraCharges((prev) => [
       ...prev,
       { id: `${Date.now()}-${Math.random()}`, label, amount }
     ]);
   };
 
-  const handleAddCustomCharge = (e) => {
+  const handleAddCustomCharge = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const amt = Number(customChargeVal);
-    if (!customChargeName.trim() || isNaN(amt) || amt <= 0) return;
+    if (!customChargeName.trim() || Number.isNaN(amt) || amt <= 0) return;
     addQuickCharge(customChargeName.trim(), Math.round(amt));
     setCustomChargeName('');
     setCustomChargeVal('');
     setShowChargeDrawer(false);
   };
 
-  const removeCharge = (id) => {
+  const removeCharge = (id: string) => {
     setExtraCharges((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const handleApplyDiscount = (e) => {
+  const handleApplyDiscount = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const amt = Number(draftDiscountVal);
-    if (isNaN(amt) || amt <= 0) return;
+    if (Number.isNaN(amt) || amt <= 0) return;
     setDiscountAmount(Math.round(amt));
     setDiscountNote(draftDiscountNote.trim() || 'Discount / Waiver');
     setDraftDiscountVal('');
@@ -317,60 +249,69 @@ export default function App() {
     setDiscountNote('');
   };
 
-  const renderPresetIcon = (id) => {
-    if (id === 'pg') return <BedDouble className="w-3.5 h-3.5" />;
-    if (id === 'flat') return <Building2 className="w-3.5 h-3.5" />;
-    return <Store className="w-3.5 h-3.5" />;
+  const handleBackClick = () => {
+    if (isCompleted) {
+      setIsCompleted(false);
+      setIsDoneConfirmed(false);
+      return;
+    }
+    setHeaderBannerMsg('Returned to tenant profile view');
+    setTimeout(() => setHeaderBannerMsg(''), 2500);
   };
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 font-sans pb-12">
       {/* ===================================================================== */}
-      {/* 1. TOP SCENARIO SWITCHER BAR                                          */}
+      {/* 1. CLEAN WHITE APP HEADER                                             */}
       {/* ===================================================================== */}
-      <header className="bg-slate-900 text-white sticky top-0 z-30 border-b border-slate-800">
-        <div className="max-w-md mx-auto px-3 py-2.5">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Test Property Preset
-            </span>
-            <span className="text-[11px] text-slate-400">
-              Deposit: <strong className="text-emerald-400">{formatINR(preset.depositHeld)}</strong>
-            </span>
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
+        <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={handleBackClick}
+              aria-label="Back"
+              className="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-700 shrink-0 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-base font-bold text-slate-900 leading-tight">Move Out</h1>
+              <p className="text-xs text-slate-500 truncate mt-0.5">
+                {TENANT_RECORD.tenantName} · {TENANT_RECORD.propertyUnit}
+              </p>
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {Object.values(PRESETS).map((item) => {
-              const active = activePresetId === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => loadPreset(item.id)}
-                  className={`flex items-center justify-center gap-1.5 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition-all ${
-                    active
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {renderPresetIcon(item.id)}
-                  <span className="truncate">{item.pillLabel}</span>
-                </button>
-              );
-            })}
+
+          <div className="text-right shrink-0 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200/80">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+              Rent
+            </span>
+            <span className="text-xs font-extrabold text-slate-800">
+              {formatINR(TENANT_RECORD.monthlyRent)}/mo
+            </span>
           </div>
         </div>
+
+        {headerBannerMsg && (
+          <div className="max-w-md mx-auto px-4 pb-2.5">
+            <div className="text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5">
+              {headerBannerMsg}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ===================================================================== */}
-      {/* 2. MOBILE-FIRST CONTAINER (max-w-md mx-auto)                          */}
+      {/* 2. MOBILE-FIRST CONTAINER                                             */}
       {/* ===================================================================== */}
       <main className="max-w-md mx-auto px-3 pt-4 space-y-3.5">
         {/* =================================================================== */}
-        {/* 4. POST-SETTLEMENT COMPLETION SCREEN                                */}
+        {/* POST-SETTLEMENT COMPLETION VIEW                                     */}
         {/* =================================================================== */}
         {isCompleted ? (
           <div className="space-y-3.5">
-            {/* Completion Header */}
+            {/* Completion Status Card */}
             <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2.5">
@@ -381,30 +322,21 @@ export default function App() {
                     <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                       Move-Out Completed
                     </span>
-                    <h1 className="text-base font-bold text-slate-900 mt-1">
-                      {preset.tenantName} · {preset.unitName}
-                    </h1>
+                    <h2 className="text-base font-bold text-slate-900 mt-1">
+                      {TENANT_RECORD.tenantName} · {TENANT_RECORD.propertyUnit}
+                    </h2>
                     <p className="text-xs text-slate-500">
-                      Exited on {formatFullDate(moveOutDate)} · Tenancy closed
+                      Exited on {formatFullDate(moveOutDate)} · Future rent stopped
                     </p>
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsCompleted(false)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shrink-0"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  Edit Settlement (24h)
-                </button>
               </div>
             </section>
 
-            {/* Unit Status After Exit (Placed AFTER all settlements are done) */}
+            {/* Unit Status After Exit (Placed at the end AFTER settlement is done) */}
             <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <h2 className="text-sm font-bold text-slate-900">Unit Status After Exit</h2>
+                <h3 className="text-sm font-bold text-slate-900">Unit Status After Exit</h3>
                 <span
                   className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
                     unitStatus === 'available'
@@ -413,15 +345,18 @@ export default function App() {
                   }`}
                 >
                   {unitStatus === 'available'
-                    ? 'Ready for Next Tenant'
-                    : 'Listing Held Temporarily'}
+                    ? 'Ready for next tenant'
+                    : 'Hold listing temporarily'}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setUnitStatus('available')}
+                  onClick={() => {
+                    setUnitStatus('available');
+                    setIsDoneConfirmed(false);
+                  }}
                   className={`p-3 rounded-xl border-2 text-left transition-all ${
                     unitStatus === 'available'
                       ? 'border-emerald-500 bg-emerald-50/60'
@@ -444,7 +379,10 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={() => setUnitStatus('repair')}
+                  onClick={() => {
+                    setUnitStatus('repair');
+                    setIsDoneConfirmed(false);
+                  }}
                   className={`p-3 rounded-xl border-2 text-left transition-all ${
                     unitStatus === 'repair'
                       ? 'border-amber-500 bg-amber-50/70'
@@ -469,75 +407,104 @@ export default function App() {
               </div>
             </section>
 
-            {/* Itemized Move-Out Settlement Slip */}
+            {/* Itemized Move-Out Settlement Receipt (Displayed directly on screen) */}
             <section className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
               <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Receipt className="w-4 h-4 text-emerald-400" />
                   <span className="text-xs font-bold uppercase tracking-wider">
-                    Move-Out Settlement Slip
+                    Move-Out Settlement Receipt
                   </span>
                 </div>
-                <span className="text-xs font-mono text-slate-400">{preset.receiptId}</span>
+                <span className="text-xs font-mono text-slate-300">{TENANT_RECORD.receiptId}</span>
               </div>
 
-              <div className="p-4 space-y-2.5 text-xs">
-                <div className="flex justify-between text-slate-600">
-                  <span>
-                    {dateInfo.fullMonth} Rent (
-                    {rentCard === 'paid'
-                      ? 'Already Paid'
-                      : isLastDayOfMonth
-                      ? 'Full Month'
-                      : `${stayDays} Days`}
-                    )
-                  </span>
-                  <span className="font-semibold text-slate-900">{formatINR(selectedRent)}</span>
-                </div>
-
-                {safePriorDues > 0 && (
-                  <div className="flex justify-between text-slate-600">
-                    <span>Prior Dues</span>
-                    <span className="font-semibold text-slate-900">
-                      {formatINR(safePriorDues)}
+              <div className="p-4 space-y-3 text-xs">
+                {/* Receipt Meta Header */}
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Tenant &amp; Unit</span>
+                    <span className="font-bold text-slate-900">
+                      {TENANT_RECORD.tenantName} · {TENANT_RECORD.propertyUnit}
                     </span>
                   </div>
-                )}
-
-                <div className="flex justify-between text-slate-600">
-                  <span>Electricity / Utilities</span>
-                  <span className="font-semibold text-slate-900">
-                    {formatINR(safeElectricity)}
-                  </span>
-                </div>
-
-                {extraCharges.map((item) => (
-                  <div key={item.id} className="flex justify-between text-slate-600">
-                    <span>+ {item.label}</span>
-                    <span className="font-semibold text-slate-900">{formatINR(item.amount)}</span>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Move-Out Date</span>
+                    <span className="font-semibold text-slate-800">
+                      {formatFullDate(moveOutDate)}
+                    </span>
                   </div>
-                ))}
-
-                {safeDiscount > 0 && (
-                  <div className="flex justify-between text-emerald-700">
-                    <span>− {discountNote}</span>
-                    <span className="font-semibold">-{formatINR(safeDiscount)}</span>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Unit Status</span>
+                    <span className="font-semibold text-slate-800">
+                      {unitStatus === 'available'
+                        ? 'Available to Rent'
+                        : 'Needs Painting / Repair'}
+                    </span>
                   </div>
-                )}
-
-                <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-slate-900">
-                  <span>Total Charges</span>
-                  <span>{formatINR(totalCharges)}</span>
                 </div>
 
-                <div className="flex justify-between font-bold text-emerald-700">
-                  <span>Less: Security Deposit Held</span>
-                  <span>- {formatINR(safeDeposit)}</span>
+                {/* Line-by-Line Financial Breakdown */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex justify-between text-slate-600">
+                    <span>
+                      {dateInfo.fullMonth} Rent (
+                      {rentCard === 'paid'
+                        ? 'Already Paid'
+                        : isLastDayOfMonth
+                        ? 'Full Month'
+                        : `${stayDays} Days`}
+                      )
+                    </span>
+                    <span className="font-semibold text-slate-900">{formatINR(selectedRent)}</span>
+                  </div>
+
+                  {safePriorDues > 0 && (
+                    <div className="flex justify-between text-slate-600">
+                      <span>Prior Dues</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatINR(safePriorDues)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-slate-600">
+                    <span>Electricity / Utilities</span>
+                    <span className="font-semibold text-slate-900">
+                      {formatINR(safeElectricity)}
+                    </span>
+                  </div>
+
+                  {extraCharges.map((item) => (
+                    <div key={item.id} className="flex justify-between text-slate-600">
+                      <span>+ {item.label}</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatINR(item.amount)}
+                      </span>
+                    </div>
+                  ))}
+
+                  {safeDiscount > 0 && (
+                    <div className="flex justify-between text-emerald-700">
+                      <span>− {discountNote}</span>
+                      <span className="font-semibold">-{formatINR(safeDiscount)}</span>
+                    </div>
+                  )}
+
+                  <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-slate-900">
+                    <span>Total Bill</span>
+                    <span>{formatINR(totalBill)}</span>
+                  </div>
+
+                  <div className="flex justify-between font-bold text-emerald-700">
+                    <span>Less: Security Deposit Adjusted</span>
+                    <span>- {formatINR(safeDeposit)}</span>
+                  </div>
                 </div>
 
-                {/* Highlighted Net Result */}
+                {/* Highlighted Net Result Box */}
                 <div
-                  className={`p-3 rounded-xl border flex items-center justify-between mt-1 ${
+                  className={`p-3 rounded-xl border flex items-center justify-between ${
                     isZero
                       ? 'bg-slate-100 border-slate-200 text-slate-900'
                       : isRefund
@@ -555,104 +522,116 @@ export default function App() {
                   <span className="text-lg font-extrabold">{formatINR(netAbs)}</span>
                 </div>
 
-                {/* Payment / Pending Breakdown */}
+                {/* Settlement Status & Payment Mode */}
                 {!isZero && (
                   <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-1">
                     <div className="flex justify-between">
+                      <span className="text-slate-500">Settlement Status</span>
+                      <span className="font-bold text-slate-900">
+                        {settlementTiming === 'later'
+                          ? `Settle Later (${isRefund ? 'Pending Refund' : 'Pending Due'})`
+                          : isPartial
+                          ? 'Partially Settled'
+                          : 'Settled Now'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
                       <span className="text-slate-500">
-                        {isRefund ? 'Refunded Now:' : 'Received Now:'}
+                        {isRefund ? 'Amount Refunded' : 'Amount Received'}
                       </span>
                       <span className="font-bold text-slate-900">
                         {settlementTiming === 'later'
-                          ? '₹0 (Settle Later)'
+                          ? '₹0'
                           : `${formatINR(safeSettledInput)} via ${paymentMode}`}
                       </span>
                     </div>
                     {paymentNote && settlementTiming === 'now' && (
                       <div className="flex justify-between">
-                        <span className="text-slate-500">Note / Ref:</span>
+                        <span className="text-slate-500">Reference / Note</span>
                         <span className="font-medium text-slate-700">{paymentNote}</span>
                       </div>
                     )}
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Remaining Pending:</span>
-                      <span
-                        className={`font-bold ${
-                          remainingPending > 0 ? 'text-amber-700' : 'text-emerald-700'
-                        }`}
-                      >
-                        {formatINR(remainingPending)}
-                      </span>
-                    </div>
+                    {remainingPending > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">
+                          {isRefund ? 'Pending Refund Balance' : 'Pending Due Balance'}
+                        </span>
+                        <span className="font-bold text-amber-700">
+                          {formatINR(remainingPending)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </section>
 
-            {/* Bottom Actions */}
-            <div className="space-y-2 pt-1">
+            {/* Saved Banner if Done Clicked */}
+            {isDoneConfirmed && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-3.5 py-2.5 text-xs font-semibold flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  Move-out record saved and {TENANT_RECORD.propertyUnit} status updated.
+                </span>
+              </div>
+            )}
+
+            {/* Bottom Completion Actions: Edit Settlement & Done */}
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
               <button
                 type="button"
-                onClick={() => loadPreset(activePresetId)}
-                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                onClick={() => {
+                  setIsCompleted(false);
+                  setIsDoneConfirmed(false);
+                }}
+                className="py-3 px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset Demo
+                <Edit3 className="w-3.5 h-3.5" />
+                Edit Settlement
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsDoneConfirmed(true)}
+                className="py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors"
+              >
+                <Check className="w-3.5 h-3.5" />
+                Done
               </button>
             </div>
           </div>
         ) : (
           <>
             {/* =============================================================== */}
-            {/* HEADER CARD WITH TENANT & 2 MODE TABS                           */}
+            {/* 3. TOP MODE SWITCHER (2 CLEAN TABS)                             */}
             {/* =============================================================== */}
-            <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3.5">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
-                    Tenant Move-Out
-                  </span>
-                  <h1 className="text-base font-bold text-slate-900">
-                    {preset.tenantName} · {preset.unitName}
-                  </h1>
-                </div>
-                <div className="text-right shrink-0">
-                  <span className="text-[11px] text-slate-400 block">Monthly Rent</span>
-                  <span className="text-sm font-bold text-slate-800">
-                    {formatINR(preset.monthlyRent)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Two Mode Tabs */}
-              <div className="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('now')}
-                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all ${
-                    activeTab === 'now'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Move Out Now
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('future')}
-                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all ${
-                    activeTab === 'future'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Notice Given (Future Exit)
-                </button>
-              </div>
-            </section>
+            <div className="bg-slate-200/80 p-1 rounded-2xl grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('now')}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'now'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Move Out Now
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('future')}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === 'future'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Notice Given (Future Exit)
+              </button>
+            </div>
 
             {/* =============================================================== */}
-            {/* TAB 2: NOTICE GIVEN (FUTURE EXIT)                               */}
+            {/* TAB B: NOTICE GIVEN (FUTURE EXIT)                               */}
             {/* =============================================================== */}
             {activeTab === 'future' && (
               <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-4">
@@ -660,16 +639,23 @@ export default function App() {
                   <div className="space-y-3.5">
                     <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 flex items-start gap-2.5">
                       <Calendar className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-                      <div>
+                      <div className="space-y-1">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 block">
-                          Future Exit Logged
+                          Notice Saved
                         </span>
-                        <h2 className="text-sm font-bold text-slate-900 mt-0.5">
-                          {preset.unitName} · Available from {formatShortDate(futureExitDate)}
+                        <h2 className="text-sm font-bold text-slate-900">
+                          Available from {formatShortDate(futureExitDate)}
                         </h2>
-                        <p className="text-xs text-slate-600 mt-1">
-                          Rent and tenancy remain active until {formatFullDate(futureExitDate)}.
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          {TENANT_RECORD.propertyUnit} is marked &ldquo;Available from{' '}
+                          {formatShortDate(futureExitDate)}&rdquo;. Rent continues until actual
+                          exit on {formatFullDate(futureExitDate)}.
                         </p>
+                        {noticeNote.trim() && (
+                          <p className="text-xs text-slate-700 bg-white/80 px-2.5 py-1.5 rounded-lg border border-indigo-100 mt-1.5">
+                            Note: {noticeNote.trim()}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -677,40 +663,66 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setIsNoticeSaved(false)}
-                        className="py-2.5 px-3 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-slate-300 text-xs font-bold transition-colors"
+                        className="py-2.5 px-3.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold transition-colors"
                       >
-                        Change Date
+                        Cancel Notice
                       </button>
                       <button
                         type="button"
                         onClick={() => {
                           setMoveOutDate(futureExitDate);
+                          setIsRentOverridden(false);
                           setActiveTab('now');
                         }}
                         className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors"
                       >
-                        Proceed to Final Move-Out
+                        Proceed to Move Out Now
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-3.5">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      <label
+                        htmlFor="futureExitDate"
+                        className="block text-xs font-bold text-slate-700 mb-1.5"
+                      >
                         Expected Move-Out Date
                       </label>
                       <input
+                        id="futureExitDate"
                         type="date"
                         value={futureExitDate}
-                        onChange={(e) => setFutureExitDate(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          setFutureExitDate(e.target.value)
+                        }
                         className="w-full px-3 py-2.5 text-sm font-semibold border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="noticeNoteInput"
+                        className="block text-xs font-bold text-slate-700 mb-1.5"
+                      >
+                        Short Note (Optional)
+                      </label>
+                      <input
+                        id="noticeNoteInput"
+                        type="text"
+                        placeholder="e.g., Relocating at month end"
+                        value={noticeNote}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          setNoticeNote(e.target.value)
+                        }
+                        className="w-full px-3 py-2.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                       />
                     </div>
 
                     <p className="text-xs text-slate-500 flex items-start gap-1.5">
                       <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
                       <span>
-                        Unit will display &ldquo;Available from {formatShortDate(futureExitDate)}
+                        Marks the unit &ldquo;Available from {formatShortDate(futureExitDate)}
                         &rdquo; while keeping rent active until actual move-out.
                       </span>
                     </p>
@@ -720,7 +732,7 @@ export default function App() {
                       onClick={() => setIsNoticeSaved(true)}
                       className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-xs transition-colors"
                     >
-                      Save Expected Exit Date
+                      Save Notice
                     </button>
                   </div>
                 )}
@@ -728,11 +740,11 @@ export default function App() {
             )}
 
             {/* =============================================================== */}
-            {/* TAB 1: MOVE OUT NOW (STREAMLINED FINANCIAL FLOW)                */}
+            {/* TAB A: MOVE OUT NOW (SINGLE-SCREEN FINANCIAL SETTLEMENT)        */}
             {/* =============================================================== */}
             {activeTab === 'now' && (
               <div className="space-y-3.5">
-                {/* Move-Out Date Row */}
+                {/* Move-Out Date Card */}
                 <section className="bg-white rounded-2xl border border-slate-200 shadow-xs px-4 py-3 flex items-center justify-between gap-3">
                   <div>
                     <label
@@ -743,15 +755,15 @@ export default function App() {
                     </label>
                     <span className="text-[11px] font-semibold text-indigo-600">
                       {isLastDayOfMonth
-                        ? `Last day of ${dateInfo.shortMonth} (${daysInMonth} days)`
-                        : `${stayDays} of ${daysInMonth} days in ${dateInfo.shortMonth}`}
+                        ? `Last day of ${dateInfo.fullMonth} (${daysInMonth} days)`
+                        : `${stayDays} of ${daysInMonth} days in ${dateInfo.fullMonth}`}
                     </span>
                   </div>
                   <input
                     id="moveOutDateInput"
                     type="date"
                     value={moveOutDate}
-                    onChange={(e) => {
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       setMoveOutDate(e.target.value);
                       setIsRentOverridden(false);
                     }}
@@ -760,12 +772,12 @@ export default function App() {
                 </section>
 
                 {/* =========================================================== */}
-                {/* SECTION 1: FINAL BILL & DEPOSIT CALCULATION                 */}
+                {/* BILLING INPUTS CARD                                         */}
                 {/* =========================================================== */}
                 <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      1. Final Bill & Deposit Calculation
+                      Final Bill Details
                     </h2>
                     {!showPriorDuesInput && safePriorDues === 0 && (
                       <button
@@ -778,9 +790,8 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* CRITICAL UI REQUIREMENT: EXACTLY TWO SIDE-BY-SIDE CARDS */}
+                  {/* CURRENT MONTH RENT: EXACTLY TWO SIDE-BY-SIDE CARDS */}
                   <div className="space-y-2">
-                    {/* Header Row: "[Month Name] Rent" on left, active amount in bold on right */}
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-800">
                         {dateInfo.fullMonth} Rent
@@ -790,7 +801,6 @@ export default function App() {
                       </span>
                     </div>
 
-                    {/* Grid of 2 Cards (NEVER 3 cards) */}
                     <div className="grid grid-cols-2 gap-2.5">
                       {/* Card 1: Already Paid */}
                       <button
@@ -812,7 +822,7 @@ export default function App() {
                         </span>
                       </button>
 
-                      {/* Card 2: Dynamic Single Card ("[X] Days" mid-month OR "Full Month" on last day) */}
+                      {/* Card 2: [Day] Days OR Full Month on last day of month */}
                       <button
                         type="button"
                         onClick={() => setRentCard('stay')}
@@ -835,57 +845,54 @@ export default function App() {
                       </button>
                     </div>
 
-                    {/* Subtle Compact Caption Below the 2 Cards when Card 2 is selected */}
-                    {rentCard === 'stay' && (
-                      <div className="space-y-2 pt-0.5">
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 px-0.5">
-                          <span>
-                            {isLastDayOfMonth
-                              ? `Full month · ${daysInMonth} days`
-                              : `${stayDays} of ${daysInMonth} days · ${formatINR(dailyRate)}/day`}
-                          </span>
-                          {!isRentOverridden ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCustomRentAmount(autoStayRent);
-                                setIsRentOverridden(true);
-                              }}
-                              className="font-semibold text-indigo-600 hover:text-indigo-700"
-                            >
-                              Override ₹
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setIsRentOverridden(false)}
-                              className="font-semibold text-indigo-600 hover:text-indigo-700"
-                            >
-                              Reset auto
-                            </button>
-                          )}
-                        </div>
+                    {/* Daily rate caption + Override ₹ toggle directly below Card 2 */}
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 px-0.5 pt-0.5">
+                      <span>
+                        {formatINR(dailyRate)}/day · {daysInMonth}-day month
+                      </span>
+                      {rentCard === 'stay' &&
+                        (!isRentOverridden ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomRentAmount(autoStayRent);
+                              setIsRentOverridden(true);
+                            }}
+                            className="font-semibold text-indigo-600 hover:text-indigo-700"
+                          >
+                            Override ₹
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setIsRentOverridden(false)}
+                            className="font-semibold text-indigo-600 hover:text-indigo-700"
+                          >
+                            Reset auto
+                          </button>
+                        ))}
+                    </div>
 
-                        {/* Custom Rent Override Input (only shown when owner clicks "Override ₹") */}
-                        {isRentOverridden && (
-                          <div className="flex items-center justify-between gap-2 bg-indigo-50/70 border border-indigo-200 rounded-xl px-3 py-2">
-                            <span className="text-xs font-semibold text-indigo-900">
-                              Custom {dateInfo.shortMonth} Rent
-                            </span>
-                            <div className="relative w-32">
-                              <span className="absolute left-3 top-1.5 text-xs font-bold text-slate-500">
-                                ₹
-                              </span>
-                              <input
-                                type="number"
-                                min="0"
-                                value={customRentAmount}
-                                onChange={(e) => setCustomRentAmount(e.target.value)}
-                                className="w-full pl-6 pr-2.5 py-1 text-xs font-bold text-right bg-white border border-indigo-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                              />
-                            </div>
-                          </div>
-                        )}
+                    {/* Custom Rent Override Input */}
+                    {rentCard === 'stay' && isRentOverridden && (
+                      <div className="flex items-center justify-between gap-2 bg-indigo-50/70 border border-indigo-200 rounded-xl px-3 py-2">
+                        <span className="text-xs font-semibold text-indigo-900">
+                          Custom {dateInfo.shortMonth} Rent
+                        </span>
+                        <div className="relative w-32">
+                          <span className="absolute left-3 top-1.5 text-xs font-bold text-slate-500">
+                            ₹
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={customRentAmount}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                              setCustomRentAmount(Math.max(0, Number(e.target.value) || 0))
+                            }
+                            className="w-full pl-6 pr-2.5 py-1 text-xs font-bold text-right bg-white border border-indigo-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -893,29 +900,40 @@ export default function App() {
                   {/* Optional Prior Dues Row */}
                   {(safePriorDues > 0 || showPriorDuesInput) && (
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
-                      <label className="text-xs font-bold text-slate-800">Prior Dues</label>
+                      <label
+                        htmlFor="priorDuesInput"
+                        className="text-xs font-bold text-slate-800"
+                      >
+                        Prior Dues
+                      </label>
                       <div className="relative w-32">
                         <span className="absolute left-3 top-2 text-xs font-bold text-slate-500">
                           ₹
                         </span>
                         <input
+                          id="priorDuesInput"
                           type="number"
                           min="0"
                           value={priorDues}
-                          onChange={(e) => setPriorDues(e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            setPriorDues(Math.max(0, Number(e.target.value) || 0))
+                          }
                           className="w-full pl-6 pr-2.5 py-1.5 text-sm font-bold text-right border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                         />
                       </div>
                     </div>
                   )}
 
-                  {/* Electricity / Utilities Row + Collapsible Calc by Meter */}
+                  {/* Electricity / Utilities + Collapsible Calc by Meter */}
                   <div className="pt-3 border-t border-slate-100 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-bold text-slate-800">
+                        <label
+                          htmlFor="electricityInput"
+                          className="text-xs font-bold text-slate-800"
+                        >
                           Electricity / Utilities
-                        </span>
+                        </label>
                         <button
                           type="button"
                           onClick={() => setShowMeterCalc((v) => !v)}
@@ -935,10 +953,13 @@ export default function App() {
                           ₹
                         </span>
                         <input
+                          id="electricityInput"
                           type="number"
                           min="0"
                           value={electricityAmount}
-                          onChange={(e) => setElectricityAmount(e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            setElectricityAmount(Math.max(0, Number(e.target.value) || 0))
+                          }
                           className="w-full pl-6 pr-2.5 py-1.5 text-sm font-bold text-right border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                         />
                       </div>
@@ -955,7 +976,9 @@ export default function App() {
                             <input
                               type="number"
                               value={prevMeter}
-                              onChange={(e) => handleMeterChange('prev', e.target.value)}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                handleMeterChange('prev', e.target.value)
+                              }
                               className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded-lg bg-white"
                             />
                           </div>
@@ -966,19 +989,23 @@ export default function App() {
                             <input
                               type="number"
                               value={currMeter}
-                              onChange={(e) => handleMeterChange('curr', e.target.value)}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                handleMeterChange('curr', e.target.value)
+                              }
                               className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded-lg bg-white"
                             />
                           </div>
                           <div>
                             <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
-                              Rate / Unit (₹)
+                              Rate ₹/unit
                             </label>
                             <input
                               type="number"
                               min="0"
                               value={meterRate}
-                              onChange={(e) => handleMeterChange('rate', e.target.value)}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                handleMeterChange('rate', e.target.value)
+                              }
                               className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded-lg bg-white"
                             />
                           </div>
@@ -993,7 +1020,7 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Collapsible Optional Adjustments */}
+                  {/* Collapsible Adjustments: + Add Charge / Deduction & - Add Discount / Waiver */}
                   <div className="pt-3 border-t border-slate-100 space-y-2.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
@@ -1044,9 +1071,11 @@ export default function App() {
                         <form onSubmit={handleAddCustomCharge} className="flex gap-1.5">
                           <input
                             type="text"
-                            placeholder="Custom label"
+                            placeholder="Charge description"
                             value={customChargeName}
-                            onChange={(e) => setCustomChargeName(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                              setCustomChargeName(e.target.value)
+                            }
                             className="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
                           />
                           <input
@@ -1054,7 +1083,9 @@ export default function App() {
                             min="1"
                             placeholder="₹"
                             value={customChargeVal}
-                            onChange={(e) => setCustomChargeVal(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                              setCustomChargeVal(e.target.value)
+                            }
                             className="w-20 px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
                           />
                           <button
@@ -1075,9 +1106,11 @@ export default function App() {
                       >
                         <input
                           type="text"
-                          placeholder="Reason (optional)"
+                          placeholder="Discount label (optional)"
                           value={draftDiscountNote}
-                          onChange={(e) => setDraftDiscountNote(e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            setDraftDiscountNote(e.target.value)
+                          }
                           className="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
                         />
                         <input
@@ -1085,7 +1118,9 @@ export default function App() {
                           min="1"
                           placeholder="₹ Off"
                           value={draftDiscountVal}
-                          onChange={(e) => setDraftDiscountVal(e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            setDraftDiscountVal(e.target.value)
+                          }
                           className="w-24 px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
                         />
                         <button
@@ -1145,72 +1180,130 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                </section>
 
-                  {/* Live Calculation Summary Box */}
-                  <div className="pt-3 border-t border-slate-200 space-y-2.5">
-                    <div className="flex justify-between text-xs font-bold text-slate-800">
-                      <span>Total Charges</span>
-                      <span>{formatINR(totalCharges)}</span>
+                {/* =========================================================== */}
+                {/* LIVE BILL & SECURITY DEPOSIT SUMMARY CARD                   */}
+                {/* =========================================================== */}
+                <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Bill &amp; Deposit Summary
+                  </h2>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>
+                        {dateInfo.fullMonth} Rent (
+                        {rentCard === 'paid'
+                          ? 'Already Paid'
+                          : isLastDayOfMonth
+                          ? 'Full Month'
+                          : `${stayDays} Days`}
+                        )
+                      </span>
+                      <span className="font-semibold text-slate-900">
+                        {formatINR(selectedRent)}
+                      </span>
                     </div>
 
-                    {/* Editable Less: Security Deposit Held */}
-                    <div className="flex items-center justify-between gap-2 text-xs font-bold text-emerald-700">
-                      <span>Less: Security Deposit Held</span>
+                    {safePriorDues > 0 && (
+                      <div className="flex justify-between text-slate-600">
+                        <span>Prior Dues</span>
+                        <span className="font-semibold text-slate-900">
+                          {formatINR(safePriorDues)}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between text-slate-600">
+                      <span>Electricity / Utilities</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatINR(safeElectricity)}
+                      </span>
+                    </div>
+
+                    {extraCharges.map((item) => (
+                      <div key={item.id} className="flex justify-between text-slate-600">
+                        <span>+ {item.label}</span>
+                        <span className="font-semibold text-slate-900">
+                          {formatINR(item.amount)}
+                        </span>
+                      </div>
+                    ))}
+
+                    {safeDiscount > 0 && (
+                      <div className="flex justify-between text-emerald-700">
+                        <span>− {discountNote}</span>
+                        <span className="font-semibold">-{formatINR(safeDiscount)}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-200 flex justify-between text-xs font-extrabold text-slate-900">
+                      <span>Total Bill</span>
+                      <span>{formatINR(totalBill)}</span>
+                    </div>
+
+                    {/* Directly Editable Less: Security Deposit Held */}
+                    <div className="flex items-center justify-between gap-2 text-xs font-bold text-emerald-700 pt-1">
+                      <label htmlFor="depositHeldInput">Less: Security Deposit Held</label>
                       <div className="relative w-32">
                         <span className="absolute left-3 top-1.5 text-xs font-bold text-emerald-700">
                           - ₹
                         </span>
                         <input
+                          id="depositHeldInput"
                           type="number"
                           min="0"
                           value={depositHeld}
-                          onChange={(e) => setDepositHeld(e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            setDepositHeld(Math.max(0, Number(e.target.value) || 0))
+                          }
                           className="w-full pl-8 pr-2.5 py-1 text-xs font-bold text-right text-emerald-800 bg-emerald-50/60 border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
                         />
                       </div>
                     </div>
+                  </div>
 
-                    {/* Dynamic Color-Coded Net Result Banner */}
-                    <div
-                      className={`p-4 rounded-2xl border-2 flex items-center justify-between transition-colors ${
-                        isZero
-                          ? 'bg-slate-100 border-slate-300 text-slate-900'
-                          : isRefund
-                          ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
-                          : 'bg-amber-50 border-amber-400 text-amber-950'
-                      }`}
-                    >
-                      <div>
-                        <span
-                          className={`text-xs font-extrabold uppercase tracking-wider block ${
-                            isZero
-                              ? 'text-slate-600'
-                              : isRefund
-                              ? 'text-emerald-700'
-                              : 'text-amber-800'
-                          }`}
-                        >
-                          {isZero
-                            ? 'All Settled · ₹0 Balance'
+                  {/* Dynamic Net Result Banner */}
+                  <div
+                    className={`p-4 rounded-2xl border-2 flex items-center justify-between transition-colors ${
+                      isZero
+                        ? 'bg-slate-100 border-slate-300 text-slate-900'
+                        : isRefund
+                        ? 'bg-emerald-50 border-emerald-400 text-emerald-950'
+                        : 'bg-amber-50 border-amber-400 text-amber-950'
+                    }`}
+                  >
+                    <div>
+                      <span
+                        className={`text-xs font-extrabold uppercase tracking-wider block ${
+                          isZero
+                            ? 'text-slate-600'
                             : isRefund
-                            ? 'You Refund Tenant'
-                            : 'Tenant Pays You'}
-                        </span>
-                        <span className="text-2xl font-extrabold tracking-tight block mt-0.5">
-                          {formatINR(netAbs)}
-                        </span>
-                      </div>
+                            ? 'text-emerald-700'
+                            : 'text-amber-800'
+                        }`}
+                      >
+                        {isZero
+                          ? 'All Settled · ₹0 Balance'
+                          : isRefund
+                          ? 'You Refund Tenant'
+                          : 'Tenant Pays You'}
+                      </span>
+                      <span className="text-2xl font-extrabold tracking-tight block mt-0.5">
+                        {formatINR(netAbs)}
+                      </span>
                     </div>
                   </div>
                 </section>
 
                 {/* =========================================================== */}
-                {/* SECTION 2: SETTLEMENT SECTION                               */}
+                {/* SETTLEMENT STATUS SECTION (SHOWN WHEN NET AMOUNT > 0)       */}
                 {/* =========================================================== */}
                 {!isZero && (
                   <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3.5">
                     <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      2. Settlement
+                      Settlement Status
                     </h2>
 
                     <div className="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1">
@@ -1234,14 +1327,17 @@ export default function App() {
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        Settle Later
+                        Settle Later (Pending)
                       </button>
                     </div>
 
                     {settlementTiming === 'now' ? (
                       <div className="space-y-3">
                         <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">
+                          <label
+                            htmlFor="settledAmountInput"
+                            className="block text-xs font-bold text-slate-700 mb-1"
+                          >
                             {isRefund ? 'Amount Refunded' : 'Amount Received'}
                           </label>
                           <div className="relative">
@@ -1249,19 +1345,22 @@ export default function App() {
                               ₹
                             </span>
                             <input
+                              id="settledAmountInput"
                               type="number"
                               min="0"
                               max={netAbs}
                               value={settledAmountInput}
-                              onChange={(e) => setSettledAmountInput(e.target.value)}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                setSettledAmountInput(Math.max(0, Number(e.target.value) || 0))
+                              }
                               className="w-full pl-8 pr-3 py-2 text-base font-extrabold border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                             />
                           </div>
 
                           {isPartial && (
                             <div className="mt-2 inline-block px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-800">
-                              Remaining {formatINR(remainingPending)} will be tracked in Pending{' '}
-                              {isRefund ? 'Refunds' : 'Dues'}
+                              Remaining {formatINR(remainingPending)} will be saved as Pending{' '}
+                              {isRefund ? 'Refund' : 'Due'}
                             </div>
                           )}
                         </div>
@@ -1271,7 +1370,7 @@ export default function App() {
                             Payment Mode
                           </label>
                           <div className="grid grid-cols-3 gap-2">
-                            {['UPI', 'Cash', 'Bank'].map((mode) => (
+                            {(['UPI', 'Cash', 'Bank'] as PaymentMode[]).map((mode) => (
                               <button
                                 key={mode}
                                 type="button"
@@ -1291,18 +1390,20 @@ export default function App() {
                         <div>
                           <input
                             type="text"
-                            placeholder="Note / Ref (Optional)"
+                            placeholder="Reference / Note (Optional)"
                             value={paymentNote}
-                            onChange={(e) => setPaymentNote(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                              setPaymentNote(e.target.value)
+                            }
                             className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                           />
                         </div>
                       </div>
                     ) : (
                       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 leading-relaxed">
-                        Move-out will complete now, and{' '}
-                        <strong className="text-slate-900">{formatINR(netAbs)}</strong> will be
-                        tracked in{' '}
+                        Move-out finishes now, and{' '}
+                        <strong className="text-slate-900">{formatINR(netAbs)}</strong> is tracked
+                        in{' '}
                         <strong className="text-slate-900">
                           {isRefund ? 'Pending Refunds' : 'Pending Dues'}
                         </strong>
@@ -1313,12 +1414,15 @@ export default function App() {
                 )}
 
                 {/* =========================================================== */}
-                {/* PRIMARY CTA BUTTON                                          */}
+                {/* PRIMARY ACTION BUTTON                                       */}
                 {/* =========================================================== */}
                 <div className="pt-1 space-y-1.5 text-center">
                   <button
                     type="button"
-                    onClick={() => setIsCompleted(true)}
+                    onClick={() => {
+                      setIsCompleted(true);
+                      setIsDoneConfirmed(false);
+                    }}
                     className="w-full py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-sm transition-colors"
                   >
                     Complete Move-Out
